@@ -22,8 +22,8 @@ frontend/.env.production
 .terraform/
 *.tfstate
 *.tfstate.*
-.terraform.lock.hcl
 crash.log
+placeholder-function.zip
 
 # Instructor notes only: everything else in docs/ ships
 docs/instructor-service-reference.md

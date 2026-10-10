@@ -1,0 +1,89 @@
+# Every pull request: cheap checks first, then a real deploy to the dev stack.
+#
+# The checks need no AWS access. The deploy job uses the deploy role, which only workflow
+# runs from this repository can assume, so pull requests from forks never reach it.
+#
+# Protect this file and the rest of .github/ with CODEOWNERS and branch protection: a pull
+# request can edit its own workflow, and this one has AWS access.
+
+name: Pull request
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            lambda/requirements.txt
+            lambda/requirements-dev.txt
+
+      - name: Install Python dependencies
+        run: pip install -r lambda/requirements.txt -r lambda/requirements-dev.txt "ruff>=0.6"
+
+      - name: Lint the Python
+        run: ruff check lambda
+
+      - name: Run the tests that need no AWS
+        working-directory: lambda
+        run: pytest tests/test_guardrails.py
+
+      - name: Check the shell scripts
+        run: |
+          bash -n scripts/*.sh scripts/ci/*.sh
+          shellcheck scripts/ci/*.sh
+
+      - name: Check the function zip builds
+        run: |
+          PYTHON=python bash scripts/build-function.sh
+          python -c "import zipfile; names = zipfile.ZipFile('build/function.zip').namelist(); assert 'app/chat_handler.py' in names, names[:5]"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Check the web app builds
+        working-directory: frontend
+        env:
+          VITE_AUTH_MODE: cognito
+          VITE_COGNITO_AUTHORITY: https://example.invalid
+          VITE_COGNITO_CLIENT_ID: placeholder
+          VITE_COGNITO_DOMAIN: https://example.invalid
+        run: |
+          npm ci
+          npm run build
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Check the Terraform formats and validates
+        run: |
+          terraform -chdir=infra/terraform fmt -check -recursive
+          terraform -chdir=infra/terraform init -backend=false -input=false
+          terraform -chdir=infra/terraform validate
+
+  deploy:
+    needs: checks
+    # Forks get no AWS access, and no token to ask for it.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
