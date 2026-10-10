@@ -16,8 +16,9 @@ resource "aws_apigatewayv2_authorizer" "cognito" {
   identity_sources = ["$request.header.Authorization"]
 
   jwt_configuration {
+    # Tokens for our app only: the web client, and the CI client the eval gate signs in with
     issuer   = "https://${aws_cognito_user_pool.main.endpoint}"
-    audience = [aws_cognito_user_pool_client.web.id] # tokens for our app only
+    audience = [aws_cognito_user_pool_client.web.id, aws_cognito_user_pool_client.ci.id]
   }
 }
 

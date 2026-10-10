@@ -14,6 +14,11 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    # Builds the small placeholder zip the Lambda functions start with (see lambda.tf)
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
+    }
   }
 
   # For a team, keep state in S3 instead of on one laptop. Uncomment and fill in:
@@ -31,8 +36,9 @@ provider "aws" {
   # Every resource gets these tags, so the whole demo is easy to find in the console and in the bill
   default_tags {
     tags = {
-      Project   = var.project_name
-      ManagedBy = "terraform"
+      Project     = var.project_name
+      Environment = var.environment
+      ManagedBy   = "terraform"
     }
   }
 }
@@ -44,8 +50,9 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project   = var.project_name
-      ManagedBy = "terraform"
+      Project     = var.project_name
+      Environment = var.environment
+      ManagedBy   = "terraform"
     }
   }
 }

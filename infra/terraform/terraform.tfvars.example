@@ -22,3 +22,12 @@ alarm_email = ""
 
 # 1 instead of 2 halves the database cost, without Multi-AZ failover
 aurora_instance_count = 2
+
+# A label for this deployment: used in tags, SSM paths and the deploy role name
+environment = "dev"
+
+# The GitHub repository that may deploy through OIDC: your copy, not ours
+github_repository = "your-username/llmops-rag-aws"
+
+# Set to false if this AWS account already has a GitHub OIDC provider
+create_github_oidc_provider = true

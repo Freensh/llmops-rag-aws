@@ -127,3 +127,53 @@ variable "fallback_chat_model_id" {
   type        = string
   default     = "amazon.nova-lite-v1:0"
 }
+
+variable "environment" {
+  description = <<-EOT
+    The name of this deployment, for example dev. It appears in tags, in the SSM
+    parameter paths the pipeline reads, and in the GitHub deploy role name. Resource
+    names are still built from project_name alone, so the guides' commands keep working.
+  EOT
+  type        = string
+  default     = "dev"
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,19}$", var.environment))
+    error_message = "Lowercase letters, numbers and hyphens, 2 to 20 characters, not starting with a hyphen."
+  }
+}
+
+variable "github_repository" {
+  description = <<-EOT
+    The GitHub repository allowed to deploy this stack, as OWNER/REPO, for example
+    your-username/llmops-rag-aws. Required, with no default, because every student
+    imports the repository into their own account.
+  EOT
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
+    error_message = "Use the form OWNER/REPO."
+  }
+}
+
+variable "create_github_oidc_provider" {
+  description = <<-EOT
+    An AWS account can have only one OIDC provider for token.actions.githubusercontent.com.
+    Leave true for a fresh account. Set false if the account already has one, and
+    Terraform will look it up instead of creating it.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "demo_user_password" {
+  description = <<-EOT
+    The permanent password for the four demo users, so nobody has to set it by hand.
+    This is the password the guide documents. It is stored in Terraform state, and it is
+    fine for demo data only. Change it for anything else.
+  EOT
+  type        = string
+  sensitive   = true
+  default     = "Northwind-Demo-2026!"
+}
