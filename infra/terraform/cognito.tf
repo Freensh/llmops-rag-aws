@@ -67,6 +67,7 @@ resource "aws_cognito_user" "demo" {
   for_each     = toset(var.demo_user_emails)
   user_pool_id = aws_cognito_user_pool.main.id
   username     = each.value
+  password     = var.demo_user_password # permanent, so no admin-set-user-password step
 
   attributes = {
     email          = each.value
@@ -74,4 +75,25 @@ resource "aws_cognito_user" "demo" {
   }
 
   message_action = "SUPPRESS"
+}
+
+# A second app client, used only by the CI eval gate. The browser client above is
+# deliberately PKCE-only. A pipeline cannot open a sign-in page, so this one allows a
+# direct email and password sign-in (InitiateAuth). It has no OAuth flows and no secret,
+# and API Gateway's authorizer accepts its tokens (api_gateway.tf).
+resource "aws_cognito_user_pool_client" "ci" {
+  name         = "${local.name}-ci"
+  user_pool_id = aws_cognito_user_pool.main.id
+
+  generate_secret     = false
+  explicit_auth_flows = ["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+
+  id_token_validity      = 60
+  access_token_validity  = 60
+  refresh_token_validity = 1
+  token_validity_units {
+    id_token      = "minutes"
+    access_token  = "minutes"
+    refresh_token = "days"
+  }
 }

@@ -53,3 +53,13 @@ output "frontend_env" {
     VITE_COGNITO_DOMAIN=https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.aws_region}.amazoncognito.com
   EOT
 }
+
+output "github_actions_role_arn" {
+  description = "Set this as the repository variable AWS_ROLE_ARN in GitHub. It is the only value the pipeline cannot read from SSM."
+  value       = aws_iam_role.github_deploy.arn
+}
+
+output "ssm_prefix" {
+  description = "Where the pipeline reads the rest of its settings from"
+  value       = local.ssm_prefix
+}
