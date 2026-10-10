@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "description": "Promptfoo evaluation of the deployed Northwind HR Assistant, and the gate that decides whether a change may ship",
+  "engines": {
+    "node": ">=22.22.0"
+  },
   "devDependencies": {
     "promptfoo": "0.124.1"
   }

@@ -30,6 +30,10 @@ function readJson(file) {
 // What promptfoo writes: { results: { results: [ { vars, success, ... } ] } }
 // Older and newer versions nest it slightly differently, so look in both places.
 function promptfooResults(file) {
+  if (!fs.existsSync(file)) {
+    console.error(`No promptfoo results at ${file}. promptfoo did not finish; read its output above.`);
+    process.exit(1);
+  }
   const data = readJson(file);
   const rows = data.results?.results ?? data.results ?? [];
   const found = new Map();
