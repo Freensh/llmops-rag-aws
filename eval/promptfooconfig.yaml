@@ -1,0 +1,16 @@
+# Ask the deployed assistant the golden questions, as the right user each time, and score the
+# answers. The pass/fail decision for a pull request is made by gate.mjs, not here.
+description: Northwind HR Assistant
+
+prompts:
+  - "{{question}}"
+
+providers:
+  - file://provider.mjs
+
+tests: file://tests.mjs
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://assert.mjs

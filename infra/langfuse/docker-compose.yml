@@ -1,0 +1,173 @@
+# Langfuse (tracing, prompt registry) and redis-stack (the semantic cache), on one 8 GiB host.
+#
+# Every service has a memory limit, and the limits add up to well under the 8 GiB the host
+# has, so one runaway service is killed and restarted instead of taking the host down:
+#
+#   clickhouse        2.5 GiB   the trace store; the hungriest part of Langfuse
+#   langfuse-web      1.0 GiB
+#   langfuse-worker   1.0 GiB
+#   postgres          0.75 GiB  Langfuse's own settings and prompts, not the HR database
+#   cache             0.5 GiB   redis-stack, with a 384 MB data cap and least-recently-used eviction
+#   redis             0.25 GiB  Langfuse's job queue
+#                     ------
+#                     6.0 GiB   leaving about 1.5 GiB for the operating system and 2 GiB of swap
+#
+# The .env file next to this one is written at boot by update.sh from Secrets Manager.
+# Nothing secret is in this file.
+
+x-langfuse-env: &langfuse-env
+  NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+  DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
+  SALT: ${SALT}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+  TELEMETRY_ENABLED: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  # Blobs go to S3 using the instance's IAM role, so there are no keys here. The access keys
+  # are set to empty on purpose: Langfuse then falls back to the role.
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET}
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: ${AWS_REGION}
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ""
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ""
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: ""
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "false"
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET}
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: ${AWS_REGION}
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ""
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ""
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: ""
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "false"
+  LANGFUSE_S3_BATCH_EXPORT_ENABLED: "false"
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_AUTH: ${REDIS_AUTH}
+
+services:
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:4
+    restart: always
+    mem_limit: 1g
+    depends_on: &langfuse-depends-on
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *langfuse-env
+      NODE_OPTIONS: --max-old-space-size=768
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      # First start creates this organisation, project, API keys and admin user, so nobody
+      # has to click through the sign-up screens. Ignored once they exist.
+      LANGFUSE_INIT_ORG_ID: northwind
+      LANGFUSE_INIT_ORG_NAME: Northwind
+      LANGFUSE_INIT_PROJECT_ID: northwind-hr
+      LANGFUSE_INIT_PROJECT_NAME: Northwind HR Assistant
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL}
+      LANGFUSE_INIT_USER_NAME: Admin
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD}
+      # Nobody else should be able to create an account on this instance
+      AUTH_DISABLE_SIGNUP: "true"
+
+  langfuse-worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:4
+    restart: always
+    mem_limit: 1g
+    depends_on: *langfuse-depends-on
+    environment:
+      <<: *langfuse-env
+      NODE_OPTIONS: --max-old-space-size=768
+
+  clickhouse:
+    image: docker.io/clickhouse/clickhouse-server:25.12
+    restart: always
+    mem_limit: 2560m
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse-memory.xml:/etc/clickhouse-server/config.d/memory.xml:ro
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  postgres:
+    image: docker.io/postgres:17
+    restart: always
+    mem_limit: 768m
+    command: postgres -c shared_buffers=128MB -c max_connections=60
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # Langfuse's job queue. It must never evict keys, or queued traces are lost.
+  redis:
+    image: docker.io/redis:7
+    restart: always
+    mem_limit: 256m
+    command: >
+      --requirepass ${REDIS_AUTH}
+      --maxmemory 192mb
+      --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_AUTH\" ping | grep -q PONG"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+    environment:
+      REDIS_AUTH: ${REDIS_AUTH}
+
+  # The semantic cache for the assistant. A separate container from Langfuse's queue, with the
+  # opposite policy: when it fills up it evicts the least recently used entries, because losing
+  # a cached answer costs one model call and nothing else. The Lambda functions reach it on
+  # port 6379 of this host; the security group allows only them.
+  cache:
+    image: ${REDIS_STACK_IMAGE:-docker.io/redis/redis-stack-server:7.4.0-v3}
+    restart: always
+    mem_limit: 512m
+    ports:
+      - "6379:6379"
+    environment:
+      CACHE_REDIS_PASSWORD: ${CACHE_REDIS_PASSWORD}
+      REDIS_ARGS: --requirepass ${CACHE_REDIS_PASSWORD} --maxmemory 384mb --maxmemory-policy allkeys-lru
+    volumes:
+      - cache_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$CACHE_REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  postgres_data:
+  clickhouse_data:
+  redis_data:
+  cache_data:

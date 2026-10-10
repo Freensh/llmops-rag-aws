@@ -1,4 +1,6 @@
-# The private network. Nothing in it has a public IP address, and there is no internet gateway.
+# The private network. The application's subnets have no public IP addresses and no route to the
+# internet. The one exception is the Langfuse host, which has its own public subnet (langfuse.tf)
+# because it must pull container images; nothing on the internet can connect to it.
 #
 #   Aurora and the Lambda functions live in two private subnets, in two Availability Zones.
 #   Lambda reaches AWS services through VPC endpoints (endpoints.tf), so traffic

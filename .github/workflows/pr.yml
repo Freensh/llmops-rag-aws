@@ -46,8 +46,8 @@ jobs:
 
       - name: Check the shell scripts
         run: |
-          bash -n scripts/*.sh scripts/ci/*.sh
-          shellcheck scripts/ci/*.sh
+          bash -n scripts/*.sh scripts/ci/*.sh infra/langfuse/*.sh
+          shellcheck scripts/ci/*.sh infra/langfuse/*.sh
 
       - name: Check the function zip builds
         run: |

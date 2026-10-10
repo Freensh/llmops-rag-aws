@@ -56,7 +56,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -81,19 +81,28 @@ jobs:
       - name: Smoke test and warm-up
         run: bash scripts/ci/smoke-test.sh
 
-      # For now a failing question is reported but does not fail the run. The evaluation
-      # becomes a required gate in the next step of the rollout.
+      # The Lambda evaluation writes build/evaluation.json. It does not fail the run on its
+      # own: the gate below reads that file (for the cases that need a conversation history)
+      # and decides.
       - name: Run the evaluation
         id: evaluation
         continue-on-error: true
         run: bash scripts/ci/run-evaluation.sh
+
+      # The gate. Fails the run on a leaked secret, a regression against eval/baseline.json,
+      # or a pass count under the floor. See docs/pipeline.md.
+      - name: Evaluation gate
+        id: gate
+        run: bash scripts/ci/eval-gate.sh
 
       - name: Keep the evaluation result
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: evaluation
-          path: build/evaluation.json
+          path: |
+            build/evaluation.json
+            eval/out/
           if-no-files-found: ignore
 
       - name: Summary
@@ -104,4 +113,5 @@ jobs:
             echo "- Commit: \`${GITHUB_SHA::7}\`"
             echo "- App: ${APP_URL:-unknown}"
             echo "- Evaluation: ${{ steps.evaluation.outcome }}"
+            echo "- Gate: ${{ steps.gate.outcome }}"
           } >> "$GITHUB_STEP_SUMMARY"

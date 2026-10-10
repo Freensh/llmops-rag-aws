@@ -34,3 +34,7 @@ tfplan
 
 # Test cache
 .pytest_cache/
+
+# Eval gate
+eval/node_modules/
+eval/out/

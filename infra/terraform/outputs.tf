@@ -63,3 +63,28 @@ output "ssm_prefix" {
   description = "Where the pipeline reads the rest of its settings from"
   value       = local.ssm_prefix
 }
+
+output "langfuse_instance_id" {
+  description = "The Langfuse and cache host"
+  value       = aws_instance.langfuse.id
+}
+
+output "langfuse_private_ip" {
+  description = "Where the Lambda functions reach Langfuse (port 3000) and the cache (port 6379)"
+  value       = aws_instance.langfuse.private_ip
+}
+
+output "langfuse_ui_tunnel" {
+  description = "Run this, then open http://localhost:3000. Needs the Session Manager plugin for the AWS CLI."
+  value       = "aws ssm start-session --target ${aws_instance.langfuse.id} --document-name AWS-StartPortForwardingSession --parameters portNumber=3000,localPortNumber=3000 --region ${var.aws_region}"
+}
+
+output "langfuse_admin_email" {
+  value = var.langfuse_admin_email
+}
+
+output "langfuse_admin_password" {
+  description = "Sign in to Langfuse with langfuse_admin_email and this password"
+  value       = random_password.langfuse["admin"].result
+  sensitive   = true
+}
