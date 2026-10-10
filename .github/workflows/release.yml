@@ -1,0 +1,35 @@
+# After a merge to main, deploy it to the dev stack. Also runnable by hand from the
+# Actions tab, with two switches for the rare times the pipeline cannot tell on its own.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "infra/**"
+      - "**.md"
+  workflow_dispatch:
+    inputs:
+      force_layer:
+        description: Rebuild and publish the dependency layer even if requirements.txt is unchanged
+        type: boolean
+        default: false
+      force_ingest:
+        description: Re-ingest the policy documents even if they are unchanged
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
+    with:
+      force_layer: ${{ inputs.force_layer || false }}
+      force_ingest: ${{ inputs.force_ingest || false }}
