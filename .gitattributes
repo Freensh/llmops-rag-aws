@@ -12,3 +12,6 @@
 
 # Must keep LF: these run in bash, and CRLF gives "bad interpreter".
 *.sh    text eol=lf
+
+# The Langfuse host runs these on Linux, so they must never get Windows line endings
+infra/langfuse/* text eol=lf

@@ -177,3 +177,26 @@ variable "demo_user_password" {
   sensitive   = true
   default     = "Northwind-Demo-2026!"
 }
+
+variable "langfuse_instance_type" {
+  description = "Instance type for the Langfuse and cache host. m6i.large has 8 GiB and is not burstable, so the traces do not stop when credits run out."
+  type        = string
+  default     = "m6i.large"
+}
+
+variable "langfuse_data_gb" {
+  description = "Size of the data disk for traces, prompts and the cache, in GB. gp3 can be grown later but not shrunk."
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.langfuse_data_gb >= 20
+    error_message = "The data disk needs at least 20 GB."
+  }
+}
+
+variable "langfuse_admin_email" {
+  description = "The email of the first Langfuse user. Its password is generated: terraform output -raw langfuse_admin_password"
+  type        = string
+  default     = "admin@northwind.example"
+}

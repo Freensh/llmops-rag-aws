@@ -42,7 +42,34 @@ environment variables.
 | Documents | `sync-documents.sh` | Uploads the documents, then the manifest, only when their content changed, and waits for ingestion |
 | Web app | `publish-frontend.sh` | Builds React with the Cognito settings, copies it to S3, clears CloudFront |
 | Smoke test | `smoke-test.sh` | Checks the API refuses a request with no token, signs in as a demo user, asks one question (this also wakes Aurora and OpenSearch) |
-| Evaluation | `run-evaluation.sh` | Runs the golden questions. For now a failure is reported but does not fail the run |
+| Evaluation | `run-evaluation.sh` | Runs the golden questions inside the `evaluate` Lambda and writes `build/evaluation.json`. Never fails the run itself |
+| Evaluation gate | `eval-gate.sh` | Runs promptfoo against the deployed API, then applies the gate rules. Fails the run when the gate fails |
+
+## The evaluation gate
+
+The 43 golden questions (`lambda/data/evaluation_questions.json`) run twice: promptfoo asks the 39 that need no
+conversation history through the real API, signing in as each demo user; the `evaluate` Lambda
+covers the 4 that replay a history (the API cannot replay one). The gate (`eval/gate.mjs`) then
+fails the run when any of these is true:
+
+- A **critical** case fails. Critical means the case has `must_not_include`: a leaked salary,
+  an obeyed injection, an answer that should have been refused.
+- A case listed in `eval/baseline.json` `must_pass` fails (a regression).
+- Fewer than `floor` cases pass.
+
+A failed case is asked once more before it counts, because a model can answer differently
+between two identical calls. A critical case is never forgiven. A pass on the second try is
+listed in the summary as "needed a second try".
+
+`known_failing` lists cases that fail today and are excluded until fixed. When one starts passing the summary
+says so; remove it from `known_failing` and add it to `must_pass`, and raise `floor`.
+
+To make it block merging, add the **Deploy to dev** check as a required status check in the
+branch protection rules.
+
+Evaluation conversations are real chats, so they appear in the demo users' history on dev.
+
+Change the baseline in the same pull request as the change that justifies it, so a reviewer sees both.
 
 ## What it replaces
 
@@ -70,6 +97,6 @@ environment variables.
 - `setup-db` runs the SQL only on an empty database. A change to `lambda/db/*.sql` does not
   reach an existing one until a migration tool replaces it.
 - Dev holds whichever run finished last, including a pull request that failed the
-  evaluation. Merging fixes it.
+  gate. Merging fixes it.
 - Pull requests can edit their own workflow and the role they use can update dev. That is why
   `.github/`, `infra/` and `scripts/` have code owners.
